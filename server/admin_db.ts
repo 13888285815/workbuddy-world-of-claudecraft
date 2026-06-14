@@ -107,6 +107,8 @@ export interface AdminAccountRow {
   createdAt: string;
   lastLogin: string | null;
   isAdmin: boolean;
+  bannedAt: string | null;
+  suspendedUntil: string | null;
   characterCount: number;
   maxLevel: number;
   playtimeSeconds: number;
@@ -125,6 +127,7 @@ export async function listAccounts(search: string, page: number, limit: number):
   const [rows, total] = await Promise.all([
     pool.query(
       `SELECT a.id, a.username, a.created_at, a.last_login, a.is_admin,
+              a.banned_at, a.suspended_until,
               count(c.id)::int AS character_count,
               COALESCE(max(c.level), 0)::int AS max_level,
               COALESCE((SELECT sum(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, now()) - s.started_at)))
@@ -146,6 +149,8 @@ export async function listAccounts(search: string, page: number, limit: number):
       createdAt: r.created_at,
       lastLogin: r.last_login,
       isAdmin: r.is_admin,
+      bannedAt: r.banned_at,
+      suspendedUntil: r.suspended_until,
       characterCount: r.character_count,
       maxLevel: r.max_level,
       playtimeSeconds: Number(r.playtime_seconds),
@@ -226,6 +231,9 @@ export interface AccountDetail {
   createdAt: string;
   lastLogin: string | null;
   isAdmin: boolean;
+  bannedAt: string | null;
+  suspendedUntil: string | null;
+  moderationReason: string;
   playtimeSeconds: number;
   characters: {
     id: number;
@@ -250,7 +258,8 @@ export interface AccountDetail {
 export async function accountDetail(accountId: number): Promise<AccountDetail | null> {
   const [account, characters, sessions] = await Promise.all([
     pool.query(
-      `SELECT id, username, created_at, last_login, is_admin,
+      `SELECT id, username, created_at, last_login, is_admin, banned_at, suspended_until,
+              COALESCE(moderation_reason, '') AS moderation_reason,
               COALESCE((SELECT sum(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, now()) - s.started_at)))
                         FROM play_sessions s WHERE s.account_id = accounts.id), 0)::bigint AS playtime_seconds
        FROM accounts WHERE id = $1`,
@@ -279,6 +288,9 @@ export async function accountDetail(accountId: number): Promise<AccountDetail | 
     createdAt: a.created_at,
     lastLogin: a.last_login,
     isAdmin: a.is_admin,
+    bannedAt: a.banned_at,
+    suspendedUntil: a.suspended_until,
+    moderationReason: a.moderation_reason,
     playtimeSeconds: Number(a.playtime_seconds),
     characters: characters.rows.map((c) => ({
       id: c.id,

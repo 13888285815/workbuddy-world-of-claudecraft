@@ -2,7 +2,7 @@ import { pool } from './db';
 
 export const REPORT_REASONS = ['harassment', 'spam', 'cheating', 'offensive_name_or_chat', 'other'] as const;
 export type ReportReason = typeof REPORT_REASONS[number];
-export type ModerationAction = 'ignore' | 'suspend' | 'ban';
+export type ModerationAction = 'ignore' | 'suspend' | 'ban' | 'unban';
 
 const REPORT_DETAILS_MAX = 1000;
 const ACTION_REASON_MAX = 500;
@@ -194,7 +194,7 @@ export async function ignoreReport(reportId: number, adminAccountId: number, not
 export async function moderateAccount(input: {
   accountId: number;
   adminAccountId: number;
-  action: 'suspend' | 'ban';
+  action: 'suspend' | 'ban' | 'unban';
   reason: unknown;
   expiresAt?: unknown;
 }): Promise<void> {
@@ -218,6 +218,13 @@ export async function moderateAccount(input: {
       await client.query(
         `UPDATE accounts
          SET banned_at = now(), suspended_until = NULL, moderation_reason = $2
+         WHERE id = $1`,
+        [input.accountId, reason],
+      );
+    } else if (input.action === 'unban') {
+      await client.query(
+        `UPDATE accounts
+         SET banned_at = NULL, suspended_until = NULL, moderation_reason = $2
          WHERE id = $1`,
         [input.accountId, reason],
       );

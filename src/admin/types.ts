@@ -51,6 +51,8 @@ export interface AccountRow {
   createdAt: string;
   lastLogin: string | null;
   isAdmin: boolean;
+  bannedAt: string | null;
+  suspendedUntil: string | null;
   characterCount: number;
   maxLevel: number;
   playtimeSeconds: number;
@@ -82,6 +84,9 @@ export interface AccountDetail {
   createdAt: string;
   lastLogin: string | null;
   isAdmin: boolean;
+  bannedAt: string | null;
+  suspendedUntil: string | null;
+  moderationReason: string;
   playtimeSeconds: number;
   characters: {
     id: number;

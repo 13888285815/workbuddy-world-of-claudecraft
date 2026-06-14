@@ -132,6 +132,27 @@ describe('moderation report helpers', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it('unbans accounts and writes an audit action in one transaction', async () => {
+    const client = clientStub();
+    connect.mockResolvedValue(client as any);
+
+    await moderateAccount({
+      accountId: 2,
+      adminAccountId: 1,
+      action: 'unban',
+      reason: 'appeal accepted',
+    });
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(client.query.mock.calls[0][0]).toBe('BEGIN');
+    expect(client.query.mock.calls[1][0]).toMatch(/SET banned_at = NULL, suspended_until = NULL/);
+    expect(client.query.mock.calls[1][1]).toEqual([2, 'appeal accepted']);
+    expect(client.query.mock.calls[2][0]).toMatch(/account_moderation_actions/);
+    expect(client.query.mock.calls[2][1]).toEqual([2, 1, 'unban', 'appeal accepted', null]);
+    expect(client.query.mock.calls[4][0]).toBe('COMMIT');
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
   it('marks a character for forced rename and action-resolves its reports', async () => {
     query.mockResolvedValueOnce({ rows: [{ account_id: 2 }] } as any);
     const client = clientStub();

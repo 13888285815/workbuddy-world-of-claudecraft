@@ -32,7 +32,7 @@ const charactersState: TableState = { page: 1, search: '', sort: 'level', dir: '
 let liveTimer: number | null = null;
 let activityTimer: number | null = null;
 let activePage: 'overview' | 'moderation' = 'overview';
-let pendingModerationAction: { endpoint: string; body: unknown; accountId: number } | null = null;
+let pendingModerationAction: { endpoint: string; body: unknown; accountId: number; source: 'account' | 'moderation' } | null = null;
 
 // ---------------------------------------------------------------------------
 // Auth flow
@@ -180,10 +180,22 @@ async function toggleAccountDetail(row: HTMLTableRowElement, accountId: number):
     const detail = await apiGet<AccountDetail>(`/admin/api/accounts/${accountId}`);
     const detailRow = document.createElement('tr');
     detailRow.className = 'detail-row';
-    detailRow.innerHTML = `<td colspan="7">${renderAccountDetail(detail)}</td>`;
+    detailRow.innerHTML = `<td colspan="7">${renderAccountDetail(detail, true)}</td>`;
     row.after(detailRow);
   } catch (err) {
     if (!handleAuthFailure(err)) console.error('account detail failed:', err);
+  }
+}
+
+async function refreshOpenAccountDetail(accountId: number): Promise<void> {
+  const row = document.querySelector<HTMLTableRowElement>(`#accounts tr.clickable[data-account-id="${CSS.escape(String(accountId))}"]`);
+  const detailRow = row?.nextElementSibling;
+  if (!row || !detailRow?.classList.contains('detail-row')) return;
+  try {
+    const detail = await apiGet<AccountDetail>(`/admin/api/accounts/${accountId}`);
+    detailRow.innerHTML = `<td colspan="7">${renderAccountDetail(detail, true)}</td>`;
+  } catch (err) {
+    if (!handleAuthFailure(err)) console.error('account detail refresh failed:', err);
   }
 }
 
@@ -203,11 +215,13 @@ function showModerationConfirm(opts: {
   endpoint: string;
   body: unknown;
   accountId: number;
+  source: 'account' | 'moderation';
+  confirmEl: HTMLElement;
   danger?: boolean;
 }): void {
-  pendingModerationAction = { endpoint: opts.endpoint, body: opts.body, accountId: opts.accountId };
-  const el = $('mod-confirm');
-  el.className = 'mod-confirm show';
+  pendingModerationAction = { endpoint: opts.endpoint, body: opts.body, accountId: opts.accountId, source: opts.source };
+  const el = opts.confirmEl;
+  el.className = `mod-confirm show${el.classList.contains('account-mod-confirm') ? ' account-mod-confirm' : ''}`;
   el.innerHTML = `
     <h4>${escapeHtml(opts.title)}</h4>
     <dl>${opts.rows.map((r) => `<dt>${escapeHtml(r.label)}</dt><dd>${escapeHtml(r.value)}</dd>`).join('')}</dl>
@@ -216,6 +230,168 @@ function showModerationConfirm(opts: {
       <button data-cancel-moderation>Cancel</button>
     </div>`;
   el.scrollIntoView({ block: 'nearest' });
+}
+
+function moderationReasonInput(target: HTMLElement): HTMLInputElement | null {
+  const detailRow = target.closest('.detail-row');
+  return (detailRow?.querySelector('.account-mod-reason') as HTMLInputElement | null) ??
+    ($('mod-reason') as HTMLInputElement | null);
+}
+
+function moderationCustomExpiryInput(target: HTMLElement): HTMLInputElement | null {
+  const detailRow = target.closest('.detail-row');
+  return (detailRow?.querySelector('.account-custom-expiry') as HTMLInputElement | null) ??
+    ($('mod-custom-expiry') as HTMLInputElement | null);
+}
+
+function moderationConfirmEl(target: HTMLElement): HTMLElement {
+  const detailRow = target.closest('.detail-row');
+  return (detailRow?.querySelector('.account-mod-confirm') as HTMLElement | null) ?? $('mod-confirm');
+}
+
+async function finishModerationAction(): Promise<void> {
+  const pending = pendingModerationAction;
+  if (!pending) return;
+  await apiPost(pending.endpoint, pending.body);
+  pendingModerationAction = null;
+  void refreshAccounts();
+  void refreshModeration();
+  if (pending.source === 'account' && Number.isFinite(pending.accountId)) {
+    await refreshOpenAccountDetail(pending.accountId);
+  } else {
+    await openModerationAccount(pending.accountId);
+  }
+}
+
+function handleModerationActionClick(e: Event, source: 'account' | 'moderation'): boolean {
+  const target = e.target as HTMLElement;
+  const confirmEl = moderationConfirmEl(target);
+  if (target.closest('[data-cancel-moderation]')) {
+    pendingModerationAction = null;
+    confirmEl.className = `mod-confirm${confirmEl.classList.contains('account-mod-confirm') ? ' account-mod-confirm' : ''}`;
+    confirmEl.innerHTML = '';
+    return true;
+  }
+  if (target.closest('[data-confirm-moderation]')) {
+    void finishModerationAction()
+      .catch((err: unknown) => { if (!handleAuthFailure(err)) window.alert(err instanceof Error ? err.message : 'moderation action failed'); });
+    return true;
+  }
+  const actionWrap = target.closest('[data-action-account-id]') as HTMLElement | null;
+  const detailWrap = target.closest('.mod-detail') as HTMLElement | null;
+  const accountId = Number((actionWrap ?? detailWrap?.querySelector('[data-action-account-id]') as HTMLElement | null)?.dataset.actionAccountId);
+  const note = (moderationReasonInput(target)?.value ?? '').trim();
+  const requireNote = (): boolean => {
+    if (note) return true;
+    window.alert('Enter a moderator note / reason first.');
+    return false;
+  };
+  const forceRenameBtn = target.closest('button[data-force-rename-character]') as HTMLButtonElement | null;
+  if (forceRenameBtn) {
+    if (!requireNote()) return true;
+    const characterId = Number(forceRenameBtn.dataset.forceRenameCharacter);
+    const characterName = forceRenameBtn.dataset.characterName ?? `#${characterId}`;
+    showModerationConfirm({
+      title: 'Confirm forced name change',
+      rows: [
+        { label: 'Character', value: characterName },
+        { label: 'Action', value: 'Require player to choose a new character name before entering the world.' },
+        { label: 'Reason', value: note },
+      ],
+      endpoint: `/admin/api/moderation/characters/${characterId}/force-rename`,
+      body: { reason: note },
+      accountId,
+      source,
+      confirmEl,
+    });
+    return true;
+  }
+  if (!actionWrap) return false;
+  const suspendBtn = target.closest('button[data-suspend-hours]') as HTMLButtonElement | null;
+  if (suspendBtn) {
+    if (!requireNote()) return true;
+    const hours = Number(suspendBtn.dataset.suspendHours);
+    const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+    showModerationConfirm({
+      title: 'Confirm suspension',
+      rows: [
+        { label: 'Account', value: `#${accountId}` },
+        { label: 'Action', value: 'Temporary account lockout' },
+        { label: 'Length', value: `${hours} hour${hours === 1 ? '' : 's'}` },
+        { label: 'Until', value: new Date(expiresAt).toLocaleString() },
+        { label: 'Reason', value: note },
+      ],
+      endpoint: `/admin/api/moderation/accounts/${accountId}/suspend`,
+      body: { reason: note, expiresAt },
+      accountId,
+      source,
+      confirmEl,
+    });
+    return true;
+  }
+  const customSuspend = target.closest('button[data-suspend-custom]') as HTMLButtonElement | null;
+  if (customSuspend) {
+    if (!requireNote()) return true;
+    const raw = moderationCustomExpiryInput(target)?.value ?? '';
+    const expiry = raw ? new Date(raw) : null;
+    if (!expiry || !Number.isFinite(expiry.getTime())) {
+      window.alert('Choose a custom suspension expiry.');
+      return true;
+    }
+    showModerationConfirm({
+      title: 'Confirm custom suspension',
+      rows: [
+        { label: 'Account', value: `#${accountId}` },
+        { label: 'Action', value: 'Temporary account lockout' },
+        { label: 'Until', value: expiry.toLocaleString() },
+        { label: 'Reason', value: note },
+      ],
+      endpoint: `/admin/api/moderation/accounts/${accountId}/suspend`,
+      body: { reason: note, expiresAt: expiry.toISOString() },
+      accountId,
+      source,
+      confirmEl,
+    });
+    return true;
+  }
+  const banBtn = target.closest('button[data-ban-account]') as HTMLButtonElement | null;
+  if (banBtn) {
+    if (!requireNote()) return true;
+    showModerationConfirm({
+      title: 'Confirm ban',
+      rows: [
+        { label: 'Account', value: `#${accountId}` },
+        { label: 'Action', value: 'Permanent account lockout' },
+        { label: 'Reason', value: note },
+      ],
+      endpoint: `/admin/api/moderation/accounts/${accountId}/ban`,
+      body: { reason: note },
+      accountId,
+      source,
+      confirmEl,
+      danger: true,
+    });
+    return true;
+  }
+  const unbanBtn = target.closest('button[data-unban-account]') as HTMLButtonElement | null;
+  if (unbanBtn) {
+    if (!requireNote()) return true;
+    showModerationConfirm({
+      title: 'Confirm unban',
+      rows: [
+        { label: 'Account', value: `#${accountId}` },
+        { label: 'Action', value: 'Restore account login access' },
+        { label: 'Reason', value: note },
+      ],
+      endpoint: `/admin/api/moderation/accounts/${accountId}/unban`,
+      body: { reason: note },
+      accountId,
+      source,
+      confirmEl,
+    });
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +438,13 @@ function wireEvents(): void {
   });
 
   $('accounts').addEventListener('click', (e) => {
-    const row = (e.target as HTMLElement).closest('tr.clickable') as HTMLTableRowElement | null;
+    const target = e.target as HTMLElement;
+    const isAccountModClick = target.closest('.account-admin-controls, .account-mod-confirm, button[data-force-rename-character]');
+    if (isAccountModClick && handleModerationActionClick(e, 'account')) {
+      e.stopPropagation();
+      return;
+    }
+    const row = target.closest('tr.clickable') as HTMLTableRowElement | null;
     const accountId = Number(row?.dataset.accountId);
     if (row && Number.isFinite(accountId)) void toggleAccountDetail(row, accountId);
   });
@@ -275,24 +457,6 @@ function wireEvents(): void {
 
   $('moderation-detail').addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest('[data-cancel-moderation]')) {
-      pendingModerationAction = null;
-      $('mod-confirm').className = 'mod-confirm';
-      $('mod-confirm').innerHTML = '';
-      return;
-    }
-    if (target.closest('[data-confirm-moderation]')) {
-      const pending = pendingModerationAction;
-      if (!pending) return;
-      void apiPost(pending.endpoint, pending.body)
-        .then(() => {
-          pendingModerationAction = null;
-          void refreshModeration();
-          void openModerationAccount(pending.accountId);
-        })
-        .catch((err: unknown) => { if (!handleAuthFailure(err)) window.alert(err instanceof Error ? err.message : 'moderation action failed'); });
-      return;
-    }
     const ignoreBtn = target.closest('button[data-ignore-report]') as HTMLButtonElement | null;
     if (ignoreBtn) {
       const reportId = Number(ignoreBtn.dataset.ignoreReport);
@@ -306,93 +470,7 @@ function wireEvents(): void {
         .catch((err: unknown) => { if (!handleAuthFailure(err)) window.alert(err instanceof Error ? err.message : 'ignore failed'); });
       return;
     }
-    const actionWrap = target.closest('[data-action-account-id]') as HTMLElement | null;
-    const detailWrap = target.closest('.mod-detail') as HTMLElement | null;
-    const accountId = Number((actionWrap ?? detailWrap?.querySelector('[data-action-account-id]') as HTMLElement | null)?.dataset.actionAccountId);
-    const note = (($('mod-reason') as HTMLInputElement | null)?.value ?? '').trim();
-    const requireNote = (): boolean => {
-      if (note) return true;
-      window.alert('Enter a moderator note / reason first.');
-      return false;
-    };
-    const forceRenameBtn = target.closest('button[data-force-rename-character]') as HTMLButtonElement | null;
-    if (forceRenameBtn) {
-      if (!requireNote()) return;
-      const characterId = Number(forceRenameBtn.dataset.forceRenameCharacter);
-      const characterName = forceRenameBtn.dataset.characterName ?? `#${characterId}`;
-      showModerationConfirm({
-        title: 'Confirm forced name change',
-        rows: [
-          { label: 'Character', value: characterName },
-          { label: 'Action', value: 'Require player to choose a new character name before entering the world.' },
-          { label: 'Reason', value: note },
-        ],
-        endpoint: `/admin/api/moderation/characters/${characterId}/force-rename`,
-        body: { reason: note },
-        accountId,
-      });
-      return;
-    }
-    if (!actionWrap) return;
-    const suspendBtn = target.closest('button[data-suspend-hours]') as HTMLButtonElement | null;
-    if (suspendBtn) {
-      if (!requireNote()) return;
-      const hours = Number(suspendBtn.dataset.suspendHours);
-      const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString();
-      showModerationConfirm({
-        title: 'Confirm suspension',
-        rows: [
-          { label: 'Account', value: `#${accountId}` },
-          { label: 'Action', value: 'Temporary account lockout' },
-          { label: 'Length', value: `${hours} hour${hours === 1 ? '' : 's'}` },
-          { label: 'Until', value: new Date(expiresAt).toLocaleString() },
-          { label: 'Reason', value: note },
-        ],
-        endpoint: `/admin/api/moderation/accounts/${accountId}/suspend`,
-        body: { reason: note, expiresAt },
-        accountId,
-      });
-      return;
-    }
-    const customSuspend = target.closest('button[data-suspend-custom]') as HTMLButtonElement | null;
-    if (customSuspend) {
-      if (!requireNote()) return;
-      const raw = ($('mod-custom-expiry') as HTMLInputElement).value;
-      const expiry = raw ? new Date(raw) : null;
-      if (!expiry || !Number.isFinite(expiry.getTime())) {
-        window.alert('Choose a custom suspension expiry.');
-        return;
-      }
-      showModerationConfirm({
-        title: 'Confirm custom suspension',
-        rows: [
-          { label: 'Account', value: `#${accountId}` },
-          { label: 'Action', value: 'Temporary account lockout' },
-          { label: 'Until', value: expiry.toLocaleString() },
-          { label: 'Reason', value: note },
-        ],
-        endpoint: `/admin/api/moderation/accounts/${accountId}/suspend`,
-        body: { reason: note, expiresAt: expiry.toISOString() },
-        accountId,
-      });
-      return;
-    }
-    const banBtn = target.closest('button[data-ban-account]') as HTMLButtonElement | null;
-    if (banBtn) {
-      if (!requireNote()) return;
-      showModerationConfirm({
-        title: 'Confirm ban',
-        rows: [
-          { label: 'Account', value: `#${accountId}` },
-          { label: 'Action', value: 'Permanent account lockout' },
-          { label: 'Reason', value: note },
-        ],
-        endpoint: `/admin/api/moderation/accounts/${accountId}/ban`,
-        body: { reason: note },
-        accountId,
-        danger: true,
-      });
-    }
+    handleModerationActionClick(e, 'moderation');
   });
 
   $('characters').addEventListener('click', (e) => {

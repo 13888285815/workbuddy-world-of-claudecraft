@@ -95,6 +95,16 @@
   tr.detail-row > td { background: #0d0d14; padding: 12px 16px; white-space: normal; }
   .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .detail-grid h4 { font-family: var(--title-font); color: var(--gold-dim); margin-bottom: 6px; font-size: 13px; }
+  .detail-row button {
+    padding: 4px 8px;
+    background: #1a1410;
+    color: #c9b27a;
+    border: 1px solid #463a1c;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .detail-row button:hover { color: #fff; border-color: var(--gold-dim); }
   @media (max-width: 800px) { .detail-grid { grid-template-columns: 1fr; } }
 
   /* ---------- controls ---------- */
@@ -124,6 +134,24 @@
   }
   .mod-actions button:hover, .mod-account-actions button:hover { color: #fff; border-color: var(--gold-dim); }
   .mod-account-actions input { padding: 6px 8px; background: #11111a; border: 1px solid var(--border); border-radius: 4px; color: var(--text); }
+  .account-admin-controls {
+    align-items: stretch;
+    padding: 10px;
+    background: #090910;
+    border: 1px solid #2a2414;
+    border-radius: 4px;
+  }
+  .account-status {
+    flex: 1 0 100%;
+    color: #c9b27a;
+    font-size: 12px;
+  }
+  .account-status .hint {
+    color: var(--text-dim);
+    margin-left: 8px;
+  }
+  .account-mod-reason { min-width: 300px; flex: 1 1 300px; }
+  .account-custom-expiry { width: 190px; }
   #mod-reason { min-width: 300px; flex: 1 1 300px; }
   #mod-custom-expiry { width: 190px; }
   .mod-confirm { display: none; margin: 10px 0; padding: 10px; border: 1px solid #8a6f2d; border-radius: 4px; background: #171207; }
@@ -133,8 +161,30 @@
   .mod-confirm dt { color: var(--text-dim); }
   .mod-confirm dd { color: var(--text); }
   .mod-confirm .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
-  .mod-confirm button { padding: 5px 10px; background: #1a1410; color: #c9b27a; border: 1px solid #463a1c; border-radius: 3px; cursor: pointer; }
-  .mod-confirm .danger { border-color: #b34a3a; color: #ff7a5e; }
+  .mod-confirm button {
+    min-width: 78px;
+    padding: 6px 12px;
+    background: linear-gradient(#2a2112, #15100b);
+    color: #e8d8a8;
+    border: 1px solid #6f5a2a;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+  .mod-confirm button:hover { color: #fff; border-color: var(--gold-dim); }
+  .mod-confirm button:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .mod-confirm button[data-confirm-moderation] {
+    color: var(--gold);
+    border-color: var(--gold-dim);
+  }
+  .mod-confirm .danger {
+    border-color: #b34a3a;
+    color: #ff7a5e;
+  }
 </style>
 </head>
 <body>

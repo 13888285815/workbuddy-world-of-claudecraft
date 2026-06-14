@@ -84,10 +84,13 @@ export async function handleAdminApi(
     const accountId = await adminAccountId(req);
     if (accountId === null) return fail(res, 401, 'admin authentication required');
 
-    const actionMatch = /^\/admin\/api\/moderation\/accounts\/(\d+)\/(suspend|ban)$/.exec(path);
+    const actionMatch = /^\/admin\/api\/moderation\/accounts\/(\d+)\/(suspend|ban|unban)$/.exec(path);
     if (req.method === 'POST' && actionMatch) {
       const targetAccountId = Number(actionMatch[1]);
-      const action = actionMatch[2] as 'suspend' | 'ban';
+      const action = actionMatch[2] as 'suspend' | 'ban' | 'unban';
+      if (action !== 'unban' && await isAdminAccount(targetAccountId)) {
+        return fail(res, 400, 'admin accounts cannot be suspended or banned');
+      }
       const body = await readBody(req);
       try {
         await moderateAccount({
@@ -97,8 +100,10 @@ export async function handleAdminApi(
           reason: body.reason,
           expiresAt: body.expiresAt,
         });
-        const statusText = action === 'ban' ? 'This account has been banned.' : 'This account is suspended.';
-        game.disconnectAccount(targetAccountId, statusText);
+        if (action !== 'unban') {
+          const statusText = action === 'ban' ? 'This account has been banned.' : 'This account is suspended.';
+          game.disconnectAccount(targetAccountId, statusText);
+        }
         return ok(res, { ok: true });
       } catch (err) {
         return fail(res, 400, err instanceof Error ? err.message : 'moderation action failed');

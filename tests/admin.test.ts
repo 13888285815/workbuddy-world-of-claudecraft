@@ -196,6 +196,7 @@ describe('admin api auth', () => {
     vi.mocked(isAdminAccount).mockResolvedValue(true);
     vi.mocked(accountDetail).mockResolvedValue({
       id: 9, username: 'badactor', createdAt: '', lastLogin: null, isAdmin: false,
+      bannedAt: null, suspendedUntil: null, moderationReason: '',
       playtimeSeconds: 0, characters: [], recentSessions: [],
     });
     vi.mocked(moderationReportsForAccount).mockResolvedValue([]);
@@ -225,7 +226,7 @@ describe('admin api auth', () => {
 
   it('suspends and disconnects an account', async () => {
     vi.mocked(accountForToken).mockResolvedValue(7);
-    vi.mocked(isAdminAccount).mockResolvedValue(true);
+    vi.mocked(isAdminAccount).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     vi.mocked(moderateAccount).mockResolvedValue();
     const res = fakeRes();
     const expiresAt = new Date(Date.now() + 3600_000).toISOString();
@@ -243,7 +244,7 @@ describe('admin api auth', () => {
 
   it('bans and disconnects an account', async () => {
     vi.mocked(accountForToken).mockResolvedValue(7);
-    vi.mocked(isAdminAccount).mockResolvedValue(true);
+    vi.mocked(isAdminAccount).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     vi.mocked(moderateAccount).mockResolvedValue();
     const res = fakeRes();
 
@@ -256,6 +257,40 @@ describe('admin api auth', () => {
     expect(res.statusCode).toBe(200);
     expect(moderateAccount).toHaveBeenCalledWith({ accountId: 9, adminAccountId: 7, action: 'ban', reason: 'severe abuse', expiresAt: undefined });
     expect(fakeGame.disconnectAccount).toHaveBeenCalledWith(9, 'This account has been banned.');
+  });
+
+  it('unbans without disconnecting the account', async () => {
+    vi.mocked(accountForToken).mockResolvedValue(7);
+    vi.mocked(isAdminAccount).mockResolvedValue(true);
+    vi.mocked(moderateAccount).mockResolvedValue();
+    const res = fakeRes();
+
+    await handleAdminApi(
+      fakeReq({ method: 'POST', token: VALID_TOKEN, url: '/admin/api/moderation/accounts/9/unban', body: { reason: 'appeal accepted' } }),
+      res,
+      fakeGame,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(moderateAccount).toHaveBeenCalledWith({ accountId: 9, adminAccountId: 7, action: 'unban', reason: 'appeal accepted', expiresAt: undefined });
+    expect(fakeGame.disconnectAccount).not.toHaveBeenCalled();
+  });
+
+  it('rejects suspending or banning admin accounts', async () => {
+    vi.mocked(accountForToken).mockResolvedValue(7);
+    vi.mocked(isAdminAccount).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    const res = fakeRes();
+
+    await handleAdminApi(
+      fakeReq({ method: 'POST', token: VALID_TOKEN, url: '/admin/api/moderation/accounts/9/ban', body: { reason: 'bad admin' } }),
+      res,
+      fakeGame,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/admin accounts cannot/);
+    expect(moderateAccount).not.toHaveBeenCalled();
+    expect(fakeGame.disconnectAccount).not.toHaveBeenCalled();
   });
 
   it('forces a character rename and disconnects that account', async () => {

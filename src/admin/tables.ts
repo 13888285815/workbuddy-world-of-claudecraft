@@ -33,7 +33,7 @@ export function renderAccountsTable(rows: AccountRow[]): string {
   const body = rows.map((a) => `
     <tr class="clickable" data-account-id="${a.id}">
       <td class="num">${a.id}</td>
-      <td>${escapeHtml(a.username)}${a.isAdmin ? ' <span class="badge">admin</span>' : ''}</td>
+      <td>${escapeHtml(a.username)}${a.isAdmin ? ' <span class="badge">admin</span>' : ''} ${accountStatusBadge(a)}</td>
       <td class="num">${a.characterCount}</td>
       <td class="num">${a.maxLevel}</td>
       <td class="num">${fmtDuration(a.playtimeSeconds)}</td>
@@ -49,10 +49,25 @@ export function renderAccountsTable(rows: AccountRow[]): string {
   </table>`;
 }
 
-export function renderAccountDetail(d: AccountDetail): string {
+function accountStatusBadge(a: { bannedAt: string | null; suspendedUntil: string | null }): string {
+  if (a.bannedAt) return '<span class="badge bad">banned</span>';
+  const suspendedUntil = a.suspendedUntil ? new Date(a.suspendedUntil) : null;
+  if (suspendedUntil && suspendedUntil.getTime() > Date.now()) return '<span class="badge warn">suspended</span>';
+  return '';
+}
+
+function accountStatusDetail(d: AccountDetail): string {
+  const activeSuspension = d.suspendedUntil !== null && new Date(d.suspendedUntil).getTime() > Date.now();
+  if (d.bannedAt) return `<span class="badge bad">banned</span> <span class="hint">since ${fmtDate(d.bannedAt)}</span>`;
+  if (activeSuspension) return `<span class="badge warn">suspended until ${fmtDate(d.suspendedUntil)}</span>`;
+  return '<span class="badge">active</span>';
+}
+
+export function renderAccountDetail(d: AccountDetail, includeAdminControls = false): string {
+  const canModerateAccount = includeAdminControls && !d.isAdmin;
   const chars = d.characters.length === 0
     ? '<div class="empty">no characters</div>'
-    : `<table><thead><tr><th>Name</th><th>Class</th><th class="num">Lvl</th><th class="num">XP</th><th class="num">Money</th><th class="num">Pos</th><th>Last played</th></tr></thead><tbody>${
+    : `<table><thead><tr><th>Name</th><th>Class</th><th class="num">Lvl</th><th class="num">XP</th><th class="num">Money</th><th class="num">Pos</th><th>Last played</th>${canModerateAccount ? '<th>Actions</th>' : ''}</tr></thead><tbody>${
         d.characters.map((c) => `
           <tr>
             <td>${escapeHtml(c.name)}</td>
@@ -62,6 +77,7 @@ export function renderAccountDetail(d: AccountDetail): string {
             <td class="num">${fmtCopper(c.copper)}</td>
             <td class="num">${c.pos ? `${Math.round(c.pos.x)}, ${Math.round(c.pos.z)}` : '—'}</td>
             <td>${fmtRelative(c.updatedAt)}</td>
+            ${canModerateAccount ? `<td><button data-force-rename-character="${c.id}" data-character-name="${escapeHtml(c.name)}">Force Name Change</button></td>` : ''}
           </tr>`).join('')
       }</tbody></table>`;
   const sessions = d.recentSessions.length === 0
@@ -74,10 +90,31 @@ export function renderAccountDetail(d: AccountDetail): string {
             <td class="num">${s.endedAt ? fmtDuration(s.seconds) : 'online now'}</td>
           </tr>`).join('')
       }</tbody></table>`;
-  return `<div class="detail-grid">
+  const accountStatus = accountStatusDetail(d);
+  const accountActionButtons = d.bannedAt ? `
+      <button data-unban-account="1">Unban</button>` : `
+      <button data-suspend-hours="1">Suspend 1h</button>
+      <button data-suspend-hours="24">Suspend 24h</button>
+      <button data-suspend-hours="72">Suspend 3d</button>
+      <button data-suspend-hours="168">Suspend 7d</button>
+      <button data-suspend-hours="720">Suspend 30d</button>
+      <input class="account-custom-expiry" type="datetime-local" />
+      <button data-suspend-custom="1">Suspend Custom</button>
+      <button data-ban-account="1" class="danger">Ban</button>`;
+  const adminControls = canModerateAccount ? `
+    <div class="account-admin-controls mod-account-actions" data-action-account-id="${d.id}">
+      <div class="account-status"><b>Status:</b> ${accountStatus}${d.moderationReason ? ` <span class="hint">reason: ${escapeHtml(d.moderationReason)}</span>` : ''}</div>
+      <input class="account-mod-reason" placeholder="Moderator note / reason" maxlength="500" />
+      ${accountActionButtons}
+    </div>
+    <div class="mod-confirm account-mod-confirm"></div>` : includeAdminControls ? `
+    <div class="account-admin-controls">
+      <div class="account-status"><b>Status:</b> <span class="badge">admin</span> ${accountStatus}</div>
+    </div>` : '';
+  return `<div class="account-detail" data-action-account-id="${d.id}">${adminControls}<div class="detail-grid">
     <div><h4>Characters</h4>${chars}</div>
     <div><h4>Recent sessions — total playtime ${fmtDuration(d.playtimeSeconds)}</h4>${sessions}</div>
-  </div>`;
+  </div></div>`;
 }
 
 export function renderCharactersTable(rows: CharacterRow[], sort: string, dir: string): string {
@@ -166,6 +203,16 @@ export function renderModerationDetail(d: ModerationAccountDetail): string {
       ${chat}
     </div>`;
   }).join('');
+  const moderationAccountButtons = d.account.bannedAt ? `
+      <button data-unban-account="1">Unban</button>` : `
+      <button data-suspend-hours="1">Suspend 1h</button>
+      <button data-suspend-hours="24">Suspend 24h</button>
+      <button data-suspend-hours="72">Suspend 3d</button>
+      <button data-suspend-hours="168">Suspend 7d</button>
+      <button data-suspend-hours="720">Suspend 30d</button>
+      <input id="mod-custom-expiry" type="datetime-local" />
+      <button data-suspend-custom="1">Suspend Custom</button>
+      <button data-ban-account="1">Ban</button>`;
   return `<div class="mod-detail">
     <div class="panel-title">
       <span>${escapeHtml(d.account.username)}</span>
@@ -174,14 +221,7 @@ export function renderModerationDetail(d: ModerationAccountDetail): string {
     ${renderAccountDetail(d.account)}
     <div class="mod-account-actions" data-action-account-id="${d.account.id}">
       <input id="mod-reason" placeholder="Moderator note / reason" maxlength="500" />
-      <button data-suspend-hours="1">Suspend 1h</button>
-      <button data-suspend-hours="24">Suspend 24h</button>
-      <button data-suspend-hours="72">Suspend 3d</button>
-      <button data-suspend-hours="168">Suspend 7d</button>
-      <button data-suspend-hours="720">Suspend 30d</button>
-      <input id="mod-custom-expiry" type="datetime-local" />
-      <button data-suspend-custom="1">Suspend Custom</button>
-      <button data-ban-account="1">Ban</button>
+      ${moderationAccountButtons}
     </div>
     <div id="mod-confirm" class="mod-confirm"></div>
     <h4>Open reports</h4>
