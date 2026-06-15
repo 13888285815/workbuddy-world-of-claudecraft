@@ -409,11 +409,11 @@ describe('Sim integration — active talents & ability modifiers (Phase 3)', () 
 describe('Sim integration — loadouts & build strings (Phase 4)', () => {
   it('saves and switches loadouts, restoring talents + spec + bar', () => {
     const sim = warriorAtCap();
-    sim.applyTalents(alloc({ spec: 'arms', ranks: { arms_imp_overpower: 2 } }));
-    expect(sim.saveLoadout('Arms PvE', ['mortal_strike', 'overpower', null])).toBe(0);
-    sim.applyTalents(alloc({ spec: 'prot', ranks: { prot_toughness: 3 } }));
-    expect(sim.saveLoadout('Prot Tank', ['shield_slam', 'taunt'])).toBe(1);
+    expect(sim.saveLoadout('Arms PvE', ['mortal_strike', 'overpower', null], alloc({ spec: 'arms', ranks: { arms_imp_overpower: 2 } }))).toBe(0);
+    expect(sim.saveLoadout('Prot Tank', ['shield_slam', 'taunt'], alloc({ spec: 'prot', ranks: { prot_toughness: 3 } }))).toBe(1);
     expect(sim.loadouts.length).toBe(2);
+    expect(sim.talents.spec).toBe('prot');
+    expect(sim.activeLoadout).toBe(1);
 
     expect(sim.switchLoadout(0)).toBe(true);
     expect(sim.talents.spec).toBe('arms');
@@ -434,11 +434,14 @@ describe('Sim integration — loadouts & build strings (Phase 4)', () => {
 
   it('deletes a loadout and repairs the active index', () => {
     const sim = warriorAtCap();
-    sim.saveLoadout('one', []);
-    sim.saveLoadout('two', []);
+    sim.saveLoadout('one', [], alloc({ spec: 'arms', ranks: { arms_imp_overpower: 1 } }));
+    sim.saveLoadout('two', [], alloc({ spec: 'prot', ranks: { prot_toughness: 1 } }));
+    expect(sim.activeLoadout).toBe(1);
     expect(sim.deleteLoadout(0)).toBe(true);
     expect(sim.loadouts.length).toBe(1);
     expect(sim.loadouts[0].name).toBe('two');
+    expect(sim.activeLoadout).toBe(0);
+    expect(sim.talents.spec).toBe('prot');
   });
 
   it('caps loadouts at MAX_LOADOUTS', () => {

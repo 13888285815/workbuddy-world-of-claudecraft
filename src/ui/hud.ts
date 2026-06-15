@@ -2563,6 +2563,7 @@ export class Hud {
   private inputDialog(opts: {
     title: string; label?: string; value?: string; placeholder?: string;
     multiline?: boolean; readOnly?: boolean; copy?: boolean;
+    selectText?: boolean;
     okText?: string; cancelText?: string; onOk?: (value: string) => void;
   }): void {
     document.getElementById('confirm-dialog')?.remove();
@@ -2593,7 +2594,7 @@ export class Hud {
     });
     if (!opts.multiline) input?.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); submit(); } });
     input?.focus();
-    if (opts.readOnly) (input as HTMLInputElement)?.select?.();
+    if (opts.readOnly || opts.selectText) input?.select?.();
   }
 
   // Generic in-app dropdown (replaces native <select>). The selected value lives
@@ -2831,6 +2832,7 @@ export class Hud {
     el.innerHTML =
       `<div class="panel-title"><span>${t('game.talents.title')} <span style="color:#998d6a;font-size:11px">${esc(CLASSES[cls].name)}</span></span>${close}</div>`
       + `<div class="tal-head"><span>${t('game.talents.available')}: <b>${Math.max(0, total - spent)}</b> / ${total}</span><span>${t('game.talents.spent')}: <b>${spent}</b></span></div>`
+      + `<div class="tal-help">${esc(t('game.talents.pointSource').replace('{first}', String(FIRST_TALENT_LEVEL)).replace('{cap}', String(MAX_LEVEL)))}</div>`
       + `<div class="tal-tabs" role="tablist" aria-label="${esc(t('game.talents.title'))}">`
       + `<div class="tal-tab${this.talentTab === 'class' ? ' active' : ''}" role="tab" tabindex="${this.talentTab === 'class' ? '0' : '-1'}" aria-selected="${this.talentTab === 'class'}" aria-controls="tal-body" data-tab="class"><span class="tal-tab-label">${t('game.talents.classTab')}</span><span class="tt-pts">${treeSpent('class')}</span></div>`
       + `<div class="tal-tab${this.talentTab === 'spec' ? ' active' : ''}" role="tab" tabindex="${this.talentTab === 'spec' ? '0' : '-1'}" aria-selected="${this.talentTab === 'spec'}" aria-controls="tal-body" data-tab="spec"><span class="tal-tab-label">${t('game.talents.specTab')}</span><span class="tt-pts">${treeSpent('spec')}</span></div>`
@@ -3017,36 +3019,64 @@ export class Hud {
   private talentFooterHtml(stage: TalentAllocation, total: number, spent: number): string {
     const cls = this.sim.cfg.playerClass;
     const valid = validateAllocation(cls, stage, total).ok;
-    const canApply = valid && !this.allocsEqual(stage, this.sim.talents);
     return `<div class="tal-foot">`
-      + `<button class="btn" data-act="apply"${canApply ? '' : ' disabled'}>${t('game.talents.apply')}</button>`
-      + `<button class="btn" data-act="clear"${spent > 0 ? '' : ' disabled'}>${t('game.talents.clear')}</button>`
-      + `<span class="tal-spacer"></span>`
-      + `<span class="tal-loadslot"></span>`
-      + `<button class="btn" data-act="save">${t('game.talents.saveBuild')}</button>`
-      + `<button class="btn" data-act="del"${this.sim.activeLoadout >= 0 ? '' : ' disabled'}>${t('game.talents.deleteBuild')}</button>`
-      + `<button class="btn" data-act="import">${t('game.talents.import')}</button>`
-      + `<button class="btn" data-act="export">${t('game.talents.export')}</button>`
+      + `<section class="tal-build-card tal-build-current" aria-label="${esc(t('game.talents.currentBuild'))}">`
+      + `<div class="tal-build-head"><span>${t('game.talents.currentBuild')}</span><span class="tal-loadslot"></span></div>`
+      + `<div class="tal-build-actions">`
+      + `<button class="btn tal-primary" data-act="save"${valid ? '' : ' disabled'}>${t('game.talents.saveBuild')}</button>`
+      + `<button class="btn tal-secondary" data-act="export">${t('game.talents.export')}</button>`
+      + `<button class="btn tal-secondary" data-act="del"${this.sim.activeLoadout >= 0 ? '' : ' disabled'}>${t('game.talents.deleteBuild')}</button>`
+      + `<button class="btn tal-secondary" data-act="clear"${spent > 0 ? '' : ' disabled'}>${t('game.talents.clear')}</button>`
+      + `</div>`
+      + `<div class="tal-build-help">${t('game.talents.currentBuildHint')}</div>`
+      + `</section>`
+      + `<section class="tal-build-card tal-build-create" aria-label="${esc(t('game.talents.createBuild'))}">`
+      + `<div class="tal-build-head"><span>${t('game.talents.createBuild')}</span></div>`
+      + `<div class="tal-build-actions">`
+      + `<button class="btn tal-primary" data-act="new"${valid ? '' : ' disabled'}>${t('game.talents.newBuild')}</button>`
+      + `<button class="btn tal-secondary" data-act="import">${t('game.talents.import')}</button>`
+      + `</div>`
+      + `<div class="tal-build-help">${t('game.talents.createBuildHint')}</div>`
+      + `</section>`
       + `</div>`;
   }
 
   private wireTalentFooter(el: HTMLElement, stage: TalentAllocation, total: number): void {
     const cls = this.sim.cfg.playerClass;
-    el.querySelector('[data-act="apply"]')?.addEventListener('click', () => {
-      if (!validateAllocation(cls, stage, total).ok) return;
-      this.sim.applyTalents(cloneAllocation(stage));
-      this.renderTalents();
-    });
     el.querySelector('[data-act="clear"]')?.addEventListener('click', () => {
       stage.ranks = {}; stage.choices = {};
       this.renderTalents();
     });
-    el.querySelector('[data-act="save"]')?.addEventListener('click', () => {
+    const saveStagedBuild = (name: string): void => {
+      const n = name.trim();
+      if (!n) return;
+      this.sim.saveLoadout(n, this.hotbarActions.map((a) => (a && a.type === 'ability' ? a.id : null)), cloneAllocation(stage));
+      this.talentStage = cloneAllocation(stage);
+      this.renderTalents();
+    };
+    const promptNewBuild = (): void => {
       this.inputDialog({
-        title: t('game.talents.saveBuild'), label: t('game.talents.namePrompt'),
+        title: t('game.talents.saveBuildAs'), label: t('game.talents.namePrompt'),
         value: `Build ${this.sim.loadouts.length + 1}`, okText: t('game.talents.save'),
-        onOk: (name) => { const n = name.trim(); if (n) { this.sim.saveLoadout(n, this.hotbarActions.map((a) => (a && a.type === 'ability' ? a.id : null))); this.renderTalents(); } },
+        selectText: true,
+        onOk: saveStagedBuild,
       });
+    };
+    el.querySelector('[data-act="save"]')?.addEventListener('click', () => {
+      if (!validateAllocation(cls, stage, total).ok) {
+        this.showError(t('game.talents.buildInvalid'));
+        return;
+      }
+      const active = this.sim.activeLoadout >= 0 ? this.sim.loadouts[this.sim.activeLoadout] : null;
+      if (active) saveStagedBuild(active.name);
+      else promptNewBuild();
+    });
+    el.querySelector('[data-act="new"]')?.addEventListener('click', () => {
+      if (!validateAllocation(cls, stage, total).ok) {
+        this.showError(t('game.talents.buildInvalid'));
+        return;
+      }
+      promptNewBuild();
     });
     // in-app loadout dropdown (shared component, no native <select>)
     const slot = el.querySelector('.tal-loadslot');
@@ -3054,7 +3084,7 @@ export class Hud {
       const opts = this.sim.loadouts.length
         ? this.sim.loadouts.map((l, i) => ({ value: String(i), label: l.name }))
         : [{ value: '-1', label: t('game.talents.noBuilds') }];
-      const current = this.sim.activeLoadout >= 0 ? String(this.sim.activeLoadout) : '';
+      const current = this.sim.activeLoadout >= 0 ? String(this.sim.activeLoadout) : (this.sim.loadouts.length ? '' : '-1');
       slot.replaceWith(this.buildDropdown(opts, current, (v) => {
         const i = parseInt(v, 10);
         const lo = this.sim.loadouts[i];
@@ -3066,12 +3096,20 @@ export class Hud {
       }, t('game.talents.loadouts')));
     }
     el.querySelector('[data-act="del"]')?.addEventListener('click', () => {
-      if (this.sim.activeLoadout >= 0) { this.sim.deleteLoadout(this.sim.activeLoadout); this.renderTalents(); }
+      if (this.sim.activeLoadout < 0) { this.showError(t('game.talents.selectBuildFirst')); return; }
+      const active = this.sim.loadouts[this.sim.activeLoadout];
+      if (!active) { this.showError(t('game.talents.selectBuildFirst')); return; }
+      const body = esc(t('game.talents.deleteBuildBody').replace('{name}', active.name));
+      this.confirmDialog(t('game.talents.deleteBuildTitle'), body, t('game.talents.deleteBuildConfirm'), t('game.talents.cancel'), () => {
+        this.sim.deleteLoadout(this.sim.activeLoadout);
+        this.renderTalents();
+      });
     });
     el.querySelector('[data-act="export"]')?.addEventListener('click', () => {
+      const active = this.sim.activeLoadout >= 0 ? this.sim.loadouts[this.sim.activeLoadout] : null;
       this.inputDialog({
         title: t('game.talents.export'), label: t('game.talents.exportTitle'),
-        value: exportBuild(cls, this.sim.talents), multiline: true, readOnly: true,
+        value: exportBuild(cls, active?.alloc ?? stage), multiline: true, readOnly: true,
         copy: true, cancelText: t('game.talents.close'),
       });
     });
@@ -3965,7 +4003,7 @@ export class Hud {
     parent.appendChild(row);
   }
 
-  private settingToggle(parent: HTMLElement, label: string, key: 'fullscreen' | 'showOverflowXp' | 'clickToMove'): void {
+  private settingToggle(parent: HTMLElement, label: string, key: 'fullscreen' | 'showOverflowXp'): void {
     const hooks = this.optionsHooks;
     if (!hooks) return;
     const row = document.createElement('div');
@@ -4029,10 +4067,9 @@ export class Hud {
     this.settingSlider(body, 'Render Quality', 'renderScale');
     this.settingToggle(body, 'Fullscreen', 'fullscreen');
     this.settingToggle(body, t('game.settings.showOverflowXp'), 'showOverflowXp');
-    this.settingToggle(body, 'Click to Move', 'clickToMove');
     const note = document.createElement('div');
     note.className = 'set-note';
-    note.textContent = 'Lower Camera Speed for a calmer mouselook. Render Quality below 100% boosts FPS on weaker machines. Show Overflow XP keeps the XP bar filling past the level cap. Click to Move lets you left-click the ground or an enemy to walk there.';
+    note.textContent = 'Lower Camera Speed for a calmer mouselook. Render Quality below 100% boosts FPS on weaker machines. Show Overflow XP keeps the XP bar filling past the level cap.';
     $('#options-menu').appendChild(note);
     this.settingsViewFooter();
   }
@@ -4069,9 +4106,13 @@ export class Hud {
     return item ? item.name : fallback;
   }
 
-  private settingBoolToggleKeybind(parent: HTMLElement, label: string, key: BoolSettingKey): void {
+  // Toggle row styled for the Key Bindings panel. Handles the bool Mouse Camera
+  // setting and the numeric (0/1) Click to Move setting, which both live here
+  // alongside the rebindable keys.
+  private settingToggleKeybind(parent: HTMLElement, label: string, key: BoolSettingKey | 'clickToMove'): void {
     const hooks = this.optionsHooks;
     if (!hooks) return;
+    const isOn = () => (key === 'clickToMove' ? hooks.settings.get(key) >= 0.5 : hooks.settings.get(key));
     const row = document.createElement('div');
     row.className = 'kb-row kb-toggle-row';
     const name = document.createElement('span');
@@ -4081,7 +4122,7 @@ export class Hud {
     toggle.type = 'button';
     toggle.className = 'btn kb-key kb-toggle';
     const sync = () => {
-      const on = hooks.settings.get(key);
+      const on = isOn();
       toggle.textContent = on ? 'On' : 'Off';
       toggle.classList.toggle('off', !on);
       toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -4089,8 +4130,9 @@ export class Hud {
     sync();
     toggle.addEventListener('click', () => {
       audio.click();
-      const next = !hooks.settings.get(key);
-      hooks.onSettingChange(key, hooks.settings.set(key, next));
+      const next = !isOn();
+      if (key === 'clickToMove') hooks.onSettingChange(key, next ? 1 : 0);
+      else hooks.onSettingChange(key, hooks.settings.set(key, next));
       sync();
     });
     row.append(name, toggle);
@@ -4100,11 +4142,12 @@ export class Hud {
   private renderKeybinds(): void {
     const el = $('#options-menu');
     el.innerHTML = `<div class="panel-title"><span>Key Bindings</span><span class="x-btn" data-close>${svgIcon('close')}</span></div>`;
-    this.settingBoolToggleKeybind(el, 'Mouse Camera', 'mouseCamera');
+    this.settingToggleKeybind(el, 'Mouse Camera', 'mouseCamera');
+    this.settingToggleKeybind(el, 'Click to Move', 'clickToMove');
     const note = document.createElement('div');
     note.className = 'kb-note';
     note.textContent = this.keybindNote
-      || 'Mouse Camera off: A/D turns, drag to orbit (classic). On: camera-relative WASD, A/D strafes. Click a key cell to rebind; Esc cancels.';
+      || 'Mouse Camera off: A/D turns, drag to orbit (classic). On: camera-relative WASD, A/D strafes. Click to Move: left-click the ground or an enemy to walk there. Click a key cell to rebind; Esc cancels.';
     el.appendChild(note);
     const rows = document.createElement('div');
     rows.className = 'kb-rows';

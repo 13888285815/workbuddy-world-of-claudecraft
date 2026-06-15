@@ -261,7 +261,7 @@ export interface IWorld {
   applyTalents(alloc: TalentAllocation): void;
   respec(): void;
   setSpec(specId: string | null): void;
-  saveLoadout(name: string, bar: (string | null)[]): void;
+  saveLoadout(name: string, bar: (string | null)[], alloc?: TalentAllocation): void;
   switchLoadout(index: number): void;
   deleteLoadout(index: number): void;
 }

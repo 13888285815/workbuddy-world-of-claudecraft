@@ -3,7 +3,7 @@
 import { NPCS, abilitiesKnownAt } from '../sim/data';
 import { computeQuestState, ResolvedAbility } from '../sim/sim';
 import {
-  computeTalentModifiers, emptyAllocation, talentPointsAtLevel, pointsSpent,
+  cloneAllocation, computeTalentModifiers, emptyAllocation, talentPointsAtLevel, pointsSpent,
   type TalentAllocation, type SavedLoadout, type Role,
 } from '../sim/content/talents';
 import {
@@ -823,14 +823,40 @@ export class ClientWorld implements IWorld {
   setSpec(specId: string | null): void {
     this.cmd({ cmd: 'setSpec', spec: specId });
   }
-  saveLoadout(name: string, bar: (string | null)[]): void {
-    this.cmd({ cmd: 'saveLoadout', name, bar });
+  saveLoadout(name: string, bar: (string | null)[], alloc?: TalentAllocation): void {
+    this.cmd({ cmd: 'saveLoadout', name, bar, alloc });
+    if (alloc) {
+      const clean = (name || 'Build').toString().slice(0, 24);
+      const safeBar = Array.isArray(bar) ? bar.slice(0, 16).map((b) => (typeof b === 'string' ? b : null)) : [];
+      const saved = { name: clean, alloc: cloneAllocation(alloc), bar: safeBar };
+      this.talents = cloneAllocation(alloc);
+      const existing = this.loadouts.findIndex((l) => l.name === clean);
+      if (existing >= 0) {
+        this.loadouts[existing] = saved;
+        this.activeLoadout = existing;
+      } else {
+        this.loadouts = [...this.loadouts, saved];
+        this.activeLoadout = this.loadouts.length - 1;
+      }
+      this.known = abilitiesKnownAt(this.cfg.playerClass, this.player.level, computeTalentModifiers(this.cfg.playerClass, this.talents));
+    }
   }
   switchLoadout(index: number): void {
     this.cmd({ cmd: 'switchLoadout', index });
   }
   deleteLoadout(index: number): void {
     this.cmd({ cmd: 'deleteLoadout', index });
+    if (index < 0 || index >= this.loadouts.length) return;
+    const wasActive = this.activeLoadout === index;
+    this.loadouts = this.loadouts.filter((_, i) => i !== index);
+    if (wasActive) {
+      this.activeLoadout = this.loadouts.length > 0 ? Math.min(index, this.loadouts.length - 1) : -1;
+      const next = this.activeLoadout >= 0 ? this.loadouts[this.activeLoadout] : null;
+      if (next) {
+        this.talents = cloneAllocation(next.alloc);
+        this.known = abilitiesKnownAt(this.cfg.playerClass, this.player.level, computeTalentModifiers(this.cfg.playerClass, this.talents));
+      }
+    } else if (this.activeLoadout > index) this.activeLoadout -= 1;
   }
   // legacy aliases kept for older scripts
   enterCrypt(): void {

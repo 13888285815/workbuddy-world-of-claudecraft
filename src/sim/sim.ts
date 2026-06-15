@@ -878,6 +878,12 @@ export class Sim {
     return { total: talentPointsAtLevel(r.e.level), spent: pointsSpent(r.meta.talents) };
   }
 
+  private sanitizeTalentAllocation(alloc: TalentAllocation): TalentAllocation {
+    const sanitized: TalentAllocation = { spec: alloc.spec ?? null, ranks: {}, choices: { ...alloc.choices } };
+    for (const id in alloc.ranks) { const v = Math.floor(alloc.ranks[id]); if (v > 0) sanitized.ranks[id] = v; }
+    return sanitized;
+  }
+
   // Commit a whole staged allocation in one shot (the UI's "Apply"). Rejects any
   // allocation that fails server-side validation with a reason event (FR-4.5).
   applyTalents(alloc: TalentAllocation, pid?: number): boolean {
@@ -885,8 +891,7 @@ export class Sim {
     if (!r) return false;
     const lock = this.talentLockReason(r.e);
     if (lock) { this.error(r.e.id, lock); return false; }
-    const sanitized: TalentAllocation = { spec: alloc.spec ?? null, ranks: {}, choices: { ...alloc.choices } };
-    for (const id in alloc.ranks) { const v = Math.floor(alloc.ranks[id]); if (v > 0) sanitized.ranks[id] = v; }
+    const sanitized = this.sanitizeTalentAllocation(alloc);
     if (sanitized.spec && r.e.level < FIRST_TALENT_LEVEL) { this.error(r.e.id, `You may choose a specialization at level ${FIRST_TALENT_LEVEL}.`); return false; }
     const check = validateAllocation(r.meta.cls, sanitized, talentPointsAtLevel(r.e.level));
     if (!check.ok) { this.error(r.e.id, check.reason ?? 'Invalid talent build.'); return false; }
@@ -939,17 +944,35 @@ export class Sim {
   // Save the current build (talents + spec + the given action-bar slot map) as a
   // named loadout. A same-named loadout is overwritten; otherwise appended up to
   // MAX_LOADOUTS. Returns the loadout index (-1 on failure).
-  saveLoadout(name: string, bar: (string | null)[], pid?: number): number {
+  saveLoadout(name: string, bar: (string | null)[], pidOrAlloc?: number | TalentAllocation, allocMaybe?: TalentAllocation): number {
+    const pid = typeof pidOrAlloc === 'number' ? pidOrAlloc : undefined;
+    const alloc = typeof pidOrAlloc === 'object' ? pidOrAlloc : allocMaybe;
     const r = this.resolve(pid);
     if (!r) return -1;
+    if (alloc) {
+      const lock = this.talentLockReason(r.e);
+      if (lock) { this.error(r.e.id, lock); return -1; }
+      const sanitized = this.sanitizeTalentAllocation(alloc);
+      if (sanitized.spec && r.e.level < FIRST_TALENT_LEVEL) { this.error(r.e.id, `You may choose a specialization at level ${FIRST_TALENT_LEVEL}.`); return -1; }
+      const check = validateAllocation(r.meta.cls, sanitized, talentPointsAtLevel(r.e.level));
+      if (!check.ok) { this.error(r.e.id, check.reason ?? 'Invalid talent build.'); return -1; }
+      r.meta.talents = sanitized;
+      this.recomputeTalents(r.meta);
+    }
     const clean = (name || 'Build').toString().slice(0, 24);
     const safeBar = Array.isArray(bar) ? bar.slice(0, 16).map((b) => (typeof b === 'string' ? b : null)) : [];
     const lo: SavedLoadout = { name: clean, alloc: cloneAllocation(r.meta.talents), bar: safeBar };
     const existing = r.meta.loadouts.findIndex((l) => l.name === clean);
-    if (existing >= 0) { r.meta.loadouts[existing] = lo; r.meta.activeLoadout = existing; return existing; }
+    if (existing >= 0) {
+      r.meta.loadouts[existing] = lo;
+      r.meta.activeLoadout = existing;
+      this.emit({ type: 'log', pid: r.e.id, text: `Saved build "${clean}".`, color: '#ffd100' });
+      return existing;
+    }
     if (r.meta.loadouts.length >= MAX_LOADOUTS) { this.error(r.e.id, `You can save at most ${MAX_LOADOUTS} loadouts.`); return -1; }
     r.meta.loadouts.push(lo);
     r.meta.activeLoadout = r.meta.loadouts.length - 1;
+    this.emit({ type: 'log', pid: r.e.id, text: `Saved build "${clean}".`, color: '#ffd100' });
     return r.meta.activeLoadout;
   }
 
@@ -975,9 +998,18 @@ export class Sim {
   deleteLoadout(index: number, pid?: number): boolean {
     const r = this.resolve(pid);
     if (!r || index < 0 || index >= r.meta.loadouts.length) return false;
+    const wasActive = r.meta.activeLoadout === index;
+    const name = r.meta.loadouts[index].name;
     r.meta.loadouts.splice(index, 1);
-    if (r.meta.activeLoadout === index) r.meta.activeLoadout = -1;
-    else if (r.meta.activeLoadout > index) r.meta.activeLoadout -= 1;
+    if (wasActive) {
+      r.meta.activeLoadout = r.meta.loadouts.length > 0 ? Math.min(index, r.meta.loadouts.length - 1) : -1;
+      const next = r.meta.activeLoadout >= 0 ? r.meta.loadouts[r.meta.activeLoadout] : null;
+      if (next) {
+        r.meta.talents = cloneAllocation(next.alloc);
+        this.recomputeTalents(r.meta);
+      }
+    } else if (r.meta.activeLoadout > index) r.meta.activeLoadout -= 1;
+    this.emit({ type: 'log', pid: r.e.id, text: `Deleted build "${name}".`, color: '#ffd100' });
     return true;
   }
 

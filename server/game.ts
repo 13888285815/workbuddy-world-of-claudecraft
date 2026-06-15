@@ -819,9 +819,18 @@ export class GameServer {
       }
       case 'respec': sim.respec(pid); break;
       case 'setSpec': sim.setSpec(typeof msg.spec === 'string' ? msg.spec : null, pid); break;
-      case 'saveLoadout':
-        if (typeof msg.name === 'string') sim.saveLoadout(msg.name, Array.isArray(msg.bar) ? msg.bar : [], pid);
+      case 'saveLoadout': {
+        const a = msg.alloc;
+        const alloc = a && typeof a === 'object'
+          ? {
+            spec: typeof a.spec === 'string' ? a.spec : null,
+            ranks: (a.ranks && typeof a.ranks === 'object') ? a.ranks : {},
+            choices: (a.choices && typeof a.choices === 'object') ? a.choices : {},
+          }
+          : undefined;
+        if (typeof msg.name === 'string') sim.saveLoadout(msg.name, Array.isArray(msg.bar) ? msg.bar : [], pid, alloc);
         break;
+      }
       case 'switchLoadout': if (typeof msg.index === 'number') sim.switchLoadout(msg.index | 0, pid); break;
       case 'deleteLoadout': if (typeof msg.index === 'number') sim.deleteLoadout(msg.index | 0, pid); break;
       // World Market (the Merchant's auction house)
