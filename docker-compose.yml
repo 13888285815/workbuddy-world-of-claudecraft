@@ -21,7 +21,11 @@ services:
   # then open http://localhost:8787 — or put a TLS reverse proxy in front
   # for remote hosting (see README).
   game:
-    build: .
+    build:
+      context: .
+      args:
+        # Build-time: inlined into the client bundle (see Dockerfile / .env.example).
+        VITE_TURNSTILE_SITEKEY: ${VITE_TURNSTILE_SITEKEY:-}
     container_name: eastbrook-game
     restart: unless-stopped
     depends_on:
@@ -34,6 +38,8 @@ services:
       USERNAME_BANLIST_FILE: ${USERNAME_BANLIST_FILE:-}
       CHAT_CENSOR_LIST: ${CHAT_CENSOR_LIST:-}
       CHAT_CENSOR_FILE: ${CHAT_CENSOR_FILE:-}
+      # Runtime: server-side Turnstile verification (see .env.example). Empty → gate off.
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
     # loopback-only: the TLS reverse proxy (Caddy) is the public entrance
     ports:
       - "127.0.0.1:8787:8787"
