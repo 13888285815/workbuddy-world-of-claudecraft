@@ -23,9 +23,8 @@ export const SETTING_RANGES = {
   // on by default: post-cap players see their overflow/virtual-level bar; turn
   // off for the classic static "MAX LEVEL" text (Max-Level XP Overflow)
   showOverflowXp: { min: 0, max: 1, def: 1 },
-  // off by default: always-on click-to-move would disrupt the precise melee
-  // positioning the team wanted to preserve, so it's opt-in (#95)
-  clickToMove: { min: 0, max: 1, def: 0 },
+  // on by default: click-to-move allows moving by clicking
+  clickToMove: { min: 0, max: 1, def: 1 },
   // 0 = left mouse button, 2 = right mouse button. Surfaced as a two-state
   // button in Key Bindings so click-to-move's trigger is remappable without
   // pretending mouse buttons are keyboard codes.

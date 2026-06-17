@@ -13107,7 +13107,7 @@ export type InterpolationValues = Record<string, InterpolationValue>;
 
 export const supportedLanguages = Object.keys(translations) as SupportedLanguage[];
 
-let currentLanguage: SupportedLanguage = "en";
+let currentLanguage: SupportedLanguage = "zh_CN";
 
 export function isSupportedLanguage(value: string): value is SupportedLanguage {
   return Object.prototype.hasOwnProperty.call(translations, value);
