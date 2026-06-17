@@ -13148,17 +13148,18 @@ function setStoredLanguage(lang: SupportedLanguage): void {
 }
 
 // Initialize language from URL query or localStorage if available (browser environments)
+// Priority: URL param > default language (zh_CN) > stored language
+// This ensures Chinese is the default for new visitors
 if (typeof window !== "undefined" && window.location) {
   const params = new URLSearchParams(window.location.search);
   const langParam = params.get("lang");
   if (langParam && isSupportedLanguage(langParam)) {
     currentLanguage = langParam;
-  } else {
-    currentLanguage = getStoredLanguage() ?? currentLanguage;
+    setStoredLanguage(langParam); // Save user's explicit choice
   }
-} else {
-  currentLanguage = getStoredLanguage() ?? currentLanguage;
+  // Don't use stored language - default to zh_CN for all new visitors
 }
+// Server-side rendering: keep default zh_CN
 
 export function getLanguage(): SupportedLanguage {
   return currentLanguage;
