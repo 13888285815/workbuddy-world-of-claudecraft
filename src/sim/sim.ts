@@ -999,6 +999,61 @@ export class Sim {
     if (r) r.e.gm = true;
   }
 
+  // Set a player to god mode: invulnerable, max level, max stats, max damage.
+  // This is the ultimate "无敌最强火力" mode.
+  setGodMode(pid?: number): void {
+    const r = this.resolve(pid);
+    if (!r) return;
+    
+    // Set GM flag for invulnerability
+    r.e.gm = true;
+    
+    // Set to max level
+    r.e.level = MAX_LEVEL;
+    r.meta.lifetimeXp = Math.max(r.meta.lifetimeXp, xpToReachLevel(MAX_LEVEL));
+    
+    // Maximize all stats
+    r.e.stats = {
+      str: 999,
+      agi: 999,
+      sta: 999,
+      int: 999,
+      spi: 999,
+      armor: 9999
+    };
+    
+    // Maximize weapon damage
+    r.e.weapon = {
+      min: 9999,
+      max: 99999,
+      speed: 0.1, // Super fast attack speed
+      kind: r.e.weapon.kind
+    };
+    
+    // Maximize attack power and crit chance
+    r.e.attackPower = 999999;
+    r.e.critChance = 1.0; // 100% crit chance
+    r.e.dodgeChance = 1.0; // 100% dodge chance
+    
+    // Maximize health and resource
+    r.e.maxHp = 999999999;
+    r.e.hp = r.e.maxHp;
+    if (r.e.resourceType === 'mana') {
+      r.e.maxResource = 999999999;
+      r.e.resource = r.e.maxResource;
+    } else if (r.e.resourceType === 'rage') {
+      r.e.maxResource = 9999;
+      r.e.resource = r.e.maxResource;
+    } else if (r.e.resourceType === 'energy') {
+      r.e.maxResource = 9999;
+      r.e.resource = r.e.maxResource;
+    }
+    
+    // Recalculate stats and refresh abilities
+    recalcPlayerStats(r.e, r.meta.cls, r.meta.equipment, r.meta.talentMods);
+    this.refreshKnownAbilities(r.meta, false);
+  }
+
   // Dev/test convenience: jump a player to a level (learns abilities, recalcs stats).
   setPlayerLevel(level: number, pid?: number): void {
     const r = this.resolve(pid);

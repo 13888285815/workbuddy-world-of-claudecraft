@@ -965,6 +965,13 @@ export class GameServer {
         }
         break;
       }
+      case 'dev_god_mode': {
+        if (process.env.ALLOW_DEV_COMMANDS === '1') {
+          sim.setGodMode(pid);
+          this.send(session, { t: 'events', list: [{ type: 'log', text: '🔥 GOD MODE ACTIVATED: 无敌最强火力已开启！', color: '#ffd700', pid }] });
+        }
+        break;
+      }
       case 'dev_teleport': {
         if (process.env.ALLOW_DEV_COMMANDS === '1' && typeof msg.x === 'number' && typeof msg.z === 'number') {
           const e = sim.entities.get(pid);

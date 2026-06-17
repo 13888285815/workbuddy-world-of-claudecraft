@@ -541,7 +541,29 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
     e.stopPropagation();
     if (e.key === 'Enter') {
       const text = chatInput.value.trim();
-      if (text) world.chat(text);
+      if (text) {
+        // Check for god mode command
+        if (text === '/godmode' || text === '/无敌' || text === '/zzx') {
+          if (online) {
+            // Send god mode command to server
+            (online as any).cmd({ cmd: 'dev_god_mode' });
+          } else if (offlineSim) {
+            // Apply god mode directly in offline sim
+            offlineSim.setGodMode(offlineSim.playerId);
+            // Show message in chat
+            const chatLog = $('#chatlog-pane-0') as HTMLDivElement;
+            if (chatLog) {
+              const msg = document.createElement('div');
+              msg.style.color = '#ffd700';
+              msg.textContent = '🔥 GOD MODE ACTIVATED: 无敌最强火力已开启！';
+              chatLog.appendChild(msg);
+              chatLog.scrollTop = chatLog.scrollHeight;
+            }
+          }
+        } else {
+          world.chat(text);
+        }
+      }
       closeChat();
     } else if (e.key === 'Escape') {
       closeChat();
