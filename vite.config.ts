@@ -45,6 +45,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_BUILD_ID__: JSON.stringify(appBuildId.slice(0, 12)),
     __APP_BUILD_DATE__: JSON.stringify(appBuildDate),
+    // 注入后端 API 基础 URL（构建时配置）
+    // 默认值：同源（适用于本地开发或反向代理）
+    __API_BASE_URL__: JSON.stringify(process.env.API_BASE_URL || ''),
   },
   // Parent dir has a postcss.config.js with Tailwind — ignore it; this project has no CSS pipeline.
   css: {

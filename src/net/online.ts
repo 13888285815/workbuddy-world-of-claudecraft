@@ -54,19 +54,19 @@ export class Api {
   token: string | null = null;
   username: string | null = null;
   realm: string | null = null;
-  // base origin for realm-scoped calls (characters, search, ws). '' = the page
-  // origin; set to another realm's origin when the player picks a realm
-  base = '';
+  // base origin for API calls. Defaults to __API_BASE_URL__ (set at build time)
+  // or '' (same origin). Can be overridden via setRealm().
+  base = __API_BASE_URL__ || '';
 
   setRealm(url: string): void {
     this.base = url || '';
   }
 
-  // The realm directory is always read from the page's own server. Sending the
-  // token (when logged in) also returns per-realm character counts.
+  // The realm directory is read from the API base URL. For GitHub Pages
+  // deployment, set __API_BASE_URL__ to point to your backend server.
   async realms(): Promise<RealmDirectory> {
     try {
-      const res = await fetch('/api/realms', { headers: this.token ? { Authorization: `Bearer ${this.token}` } : {} });
+      const res = await fetch(this.base + '/api/realms', { headers: this.token ? { Authorization: `Bearer ${this.token}` } : {} });
       if (!res.ok) return { current: '', realms: [], characters: {} };
       const d = await res.json();
       return { current: d.current ?? '', realms: d.realms ?? [], characters: d.characters ?? {} };
