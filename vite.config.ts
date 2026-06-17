@@ -49,7 +49,7 @@ export default defineConfig({
     __API_BASE_URL__: JSON.stringify(process.env.API_BASE_URL || ''),
     // Supabase 配置（由 .env 文件注入，构建时替换）
     __SUPABASE_URL__: JSON.stringify(process.env.VITE_SUPABASE_URL || 'https://vagekvcsjacfvoidvzzj.supabase.co'),
-    __SUPABASE_ANON_KEY__: JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || ''),
+    __SUPABASE_ANON_KEY__: JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_G66K7-LnJJew6WyqfFk5gQ_swvy2T1B'),
   },
   // Parent dir has a postcss.config.js with Tailwind — ignore it; this project has no CSS pipeline.
   css: {
