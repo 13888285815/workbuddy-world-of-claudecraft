@@ -931,26 +931,32 @@ async function startGame(world: IWorld, offlineSim: Sim | null, online: ClientWo
       return;
     }
 
-    // online: inputs stream on a timer inside ClientWorld; here we mirror state
+    // online (Supabase): drive the local Sim for NPC/world simulation
     const net = online!;
-    const resolved = resolveMove(mouselook, world.player.pos, world.player.facing);
+    // Tick the local Sim (NPCs, combat, AI)
+    const resolved = resolveMove(mouselook, net.sim.player.pos, net.sim.player.facing);
     const netFacing = movementFacing ?? resolved.facing;
-    Object.assign(net.moveInput, resolved.mi);
-    net.setMouselookFacing(netFacing);
-    if (net.flushInput()) perf.markInputSent(performance.now());
-    for (const sample of net.consumeInputEchoSamples()) perf.markInputEcho(sample);
-    net.pendingFacingDelta = 0; // superseded by the interpolated follow below
-    perf.time('events', () => hud.handleEvents(net.drainEvents()));
-    if (net.consumeProfanityChanged()) hud.setProfanityWords(net.profanityWords);
+    Object.assign(net.sim.moveInput, resolved.mi);
+    if (netFacing !== null) net.sim.player.facing = netFacing;
+    perf.markInputSent(performance.now());
+    const events = perf.time('sim', () => net.sim.tick());
+    perf.time('events', () => hud.handleEvents(events));
+    // Mirror key player state from Sim to ClientWorld (IWorld interface)
+    net.xp = net.sim.xp;
+    net.inventory = net.sim.inventory;
+    net.known = net.sim.known;
+    // Note: entities map is shared (reference) so no explicit sync needed
+    // Chat events from polling are drained separately
+    const chatEvents = net.drainEvents();
+    if (chatEvents.length > 0) perf.time('events', () => hud.handleEvents(chatEvents));
     if (net.consumeInventoryChanged()) hud.onInventoryChanged();
-    const alpha = net.lastSnapAt > 0
-      ? Math.min(1.25, (performance.now() - net.lastSnapAt) / Math.max(20, net.snapInterval))
-      : 1;
+    // For Supabase: alpha=1 (no server-side interpolation — entities updated by local Sim each frame)
+    const alpha = 1;
     perf.setNetwork({
       connected: net.connected,
-      snapInterval: Math.round(net.snapInterval),
-      lastSnapAge: net.lastSnapAt > 0 ? Math.round(performance.now() - net.lastSnapAt) : -1,
-      alpha: Math.round(alpha * 100) / 100,
+      snapInterval: 0,
+      lastSnapAge: 0,
+      alpha: 1,
     });
     const pe = world.player;
     // facing interp capped at 1 - extrapolating angles past the snapshot oscillates
@@ -1559,25 +1565,12 @@ async function enterWorld(c: CharacterSummary, button?: HTMLButtonElement): Prom
       button.textContent = t('auth.enterWorld');
     }
   }
-  const world = new ClientWorld(api.token!, c.id, c.class, api.base);
-  // wait for hello + first snapshot so the world starts populated
-  const waitStart = Date.now();
-  const poll = setInterval(() => {
-    if (world.connected && world.entities.has(world.playerId)) {
-      clearInterval(poll);
-      void startGame(world, null, world);
-    } else if (Date.now() - waitStart > 10000) {
-      clearInterval(poll);
-      world.close();
-      fatalOverlay(t('loading.enterTimeout'));
-    }
-  }, 50);
-  // a rejected join must stop the poll too, or its timeout overlay would
-  // mask the real reason (e.g. "character already in world")
-  world.onDisconnect = (reason) => {
-    clearInterval(poll);
-    fatalOverlay(userFacingApiError(reason));
-  };
+  // For Supabase: api.token is the account ID (UUID string).
+  // c.id is the character UUID (string in Supabase API).
+  const accountId = api.token ?? '';
+  const world = new ClientWorld(accountId, c.id, 0 /* unused numeric ID */, c.name, c.class);
+  // SupabaseClientWorld is immediately ready (connected=true, entities populated)
+  void startGame(world, null, world);
 }
 
 interface ClassDetails {

@@ -33,7 +33,6 @@ const appBuildId = env([
   'APP_BUILD_NUMBER',
   'BUILD_NUMBER',
   'GITHUB_RUN_NUMBER',
-  'RENDER_BUILD_ID',
   'RENDER_GIT_COMMIT',
   'VERCEL_GIT_COMMIT_SHA',
   'CF_PAGES_COMMIT_SHA',
@@ -48,6 +47,9 @@ export default defineConfig({
     // 注入后端 API 基础 URL（构建时配置）
     // 默认值：同源（适用于本地开发或反向代理）
     __API_BASE_URL__: JSON.stringify(process.env.API_BASE_URL || ''),
+    // Supabase 配置（由 .env 文件注入，构建时替换）
+    __SUPABASE_URL__: JSON.stringify(process.env.VITE_SUPABASE_URL || 'https://vagekvcsjacfvoidvzzj.supabase.co'),
+    __SUPABASE_ANON_KEY__: JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY || ''),
   },
   // Parent dir has a postcss.config.js with Tailwind — ignore it; this project has no CSS pipeline.
   css: {
