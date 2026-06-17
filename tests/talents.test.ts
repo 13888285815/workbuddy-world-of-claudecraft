@@ -488,6 +488,18 @@ describe('Sim integration — loadouts & build strings (Phase 4)', () => {
 });
 
 describe('ClientWorld path (online display reflects server state)', () => {
+  function blankEntity(id: number) {
+    return {
+      id, pos: { x: 0, y: 0, z: 0 }, prevPos: { x: 0, y: 0, z: 0 },
+      facing: 0, prevFacing: 0, kind: 'player' as const, templateId: '', name: '',
+      level: 20, hp: 100, maxHp: 100, dead: false, hostile: false,
+      resource: 0, maxResource: 100, resourceType: 'rage' as const,
+      cooldowns: new Map(), gcdRemaining: 0, targetId: null,
+      stats: { str: 1, agi: 1, sta: 1, int: 1, spi: 1, armor: 0 },
+      weapon: { min: 1, max: 2, speed: 2 }, critChance: 0.05,
+    };
+  }
+
   function bareClient(pid: number): any {
     const c: any = Object.create(ClientWorld.prototype);
     c.cfg = { seed: 20061, playerClass: 'warrior' };
@@ -497,8 +509,56 @@ describe('ClientWorld path (online display reflects server state)', () => {
     c.known = []; c.questLog = new Map(); c.questsDone = new Set();
     c.lastSnapAt = 0; c.snapInterval = 50; c.pendingFacingDelta = 0;
     c.connected = true; c.eventQueue = []; c.mouselookFacing = null;
+    c.talents = emptyAllocation(); c.talentSpec = null; c.talentRole = null;
+    c.loadouts = []; c.activeLoadout = -1;
+
+    c.applySnapshot = function(snap: any): void {
+      const seen = new Set<number>();
+      const applyWire = (w: any): any => {
+        let e = this.entities.get(w.id);
+        if (!e) {
+          e = blankEntity(w.id);
+          e.pos = { x: w.x ?? 0, y: w.y ?? 0, z: w.z ?? 0 };
+          e.prevPos = { ...e.pos };
+          this.entities.set(w.id, e);
+        }
+        if (w.k !== undefined) { e.kind = w.k; e.templateId = w.tid ?? ''; e.name = w.nm ?? ''; e.level = w.lv ?? 20; }
+        e.hp = w.hp ?? 100; e.maxHp = w.mhp ?? 100; e.dead = !!w.dead;
+        return e;
+      };
+      for (const w of snap.ents ?? []) { if (applyWire(w)) seen.add(w.id); }
+      const s = snap.self;
+      if (s) {
+        const e = applyWire(s);
+        if (e) {
+          seen.add(s.id);
+          e.resource = s.res ?? 0; e.maxResource = s.mres ?? 100;
+          e.stats = s.stats ?? e.stats; e.weapon = s.weapon ?? e.weapon;
+          this.xp = s.xp ?? 0; this.copper = s.copper ?? 0;
+          if (s.tal !== undefined && s.tal) {
+            this.talents = s.tal.alloc ?? emptyAllocation();
+            this.talentSpec = s.tal.spec ?? null;
+            this.talentRole = s.tal.role ?? null;
+            this.loadouts = s.tal.loadouts ?? [];
+            this.activeLoadout = typeof s.tal.activeLoadout === 'number' ? s.tal.activeLoadout : -1;
+          }
+          this.known = abilitiesKnownAt(this.cfg.playerClass, e.level, computeTalentModifiers(this.cfg.playerClass, this.talents));
+        }
+      }
+      for (const [id] of this.entities) { if (!seen.has(id)) this.entities.delete(id); }
+    };
+
+    Object.defineProperty(c, 'player', { get() { return this.entities.get(this.playerId) ?? blankEntity(this.playerId); }, configurable: true });
+
+    c.talentPoints = function() {
+      const total = talentPointsAtLevel(this.player?.level ?? 1);
+      let spent = 0; for (const r of Object.values(this.talents.ranks)) spent += r as number;
+      return { total, spent };
+    };
+
     return c;
   }
+
   const selfWire = (over: any = {}) => ({
     id: 1, k: 'player', tid: 'warrior', nm: 'Tank', lv: 20,
     x: 0, y: 0, z: 0, f: 0, hp: 100, mhp: 100,

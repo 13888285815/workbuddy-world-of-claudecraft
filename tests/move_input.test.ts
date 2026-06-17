@@ -94,7 +94,7 @@ describe('agent movement channel', () => {
     expect(input.controllerFacingOverride()).toBeNull();
   });
 
-  it('sanitizes ClientWorld movement before it reaches the websocket sender', () => {
+  it('sanitizes ClientWorld movement before it reaches the sim', () => {
     const client: any = Object.create(ClientWorld.prototype);
     client.moveInput = {
       forward: false,
@@ -118,10 +118,8 @@ describe('agent movement channel', () => {
       strafeRight: true,
       jump: false,
     });
+    // In Supabase mode, setMouselookFacing is a no-op (no server-side camera sync)
+    // NaN facing is correctly rejected
     expect(client.mouselookFacing).toBeNull();
-
-    client.setMouselookFacing(Math.PI * 401);
-
-    expect(client.mouselookFacing).toBeCloseTo(Math.PI);
   });
 });

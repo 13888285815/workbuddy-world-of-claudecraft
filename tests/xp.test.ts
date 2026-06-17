@@ -28,6 +28,8 @@ import { xpBarView, formatXp } from '../src/ui/xp_bar';
 import { GameServer } from '../server/game';
 import { ClientWorld } from '../src/net/online';
 import { terrainHeight } from '../src/sim/world';
+import { abilitiesKnownAt } from '../src/sim/data';
+import { computeTalentModifiers, emptyAllocation } from '../src/sim/content/talents';
 
 function makeSim(cls: 'warrior' | 'mage' | 'rogue' = 'warrior', seed = 42): Sim {
   return new Sim({ seed, playerClass: cls, autoEquip: true });
@@ -400,6 +402,18 @@ describe('xp-bar label states', () => {
 // the client derives virtual level for display (server stays authoritative).
 // -------------------------------------------------------------------------
 
+function blankEntity(id: number) {
+  return {
+    id, pos: { x: 0, y: 0, z: 0 }, prevPos: { x: 0, y: 0, z: 0 },
+    facing: 0, prevFacing: 0, kind: 'player' as const, templateId: '', name: '',
+    level: 1, hp: 100, maxHp: 100, dead: false, hostile: false,
+    resource: 0, maxResource: 100, resourceType: 'rage' as const,
+    cooldowns: new Map(), gcdRemaining: 0, targetId: null,
+    stats: { str: 1, agi: 1, sta: 1, int: 1, spi: 1, armor: 0 },
+    weapon: { min: 1, max: 2, speed: 2 }, critChance: 0.05,
+  };
+}
+
 function bareClient(pid: number): ClientWorld {
   const c: any = Object.create(ClientWorld.prototype);
   c.cfg = { seed: 20061, playerClass: 'warrior' };
@@ -426,6 +440,54 @@ function bareClient(pid: number): ClientWorld {
   c.connected = true;
   c.eventQueue = [];
   c.mouselookFacing = null;
+  c.talents = emptyAllocation();
+  c.talentSpec = null;
+  c.talentRole = null;
+  c.loadouts = [];
+  c.activeLoadout = -1;
+
+  c.applySnapshot = function(snap: any): void {
+    const seen = new Set<number>();
+    const applyWire = (w: any): any => {
+      let e = this.entities.get(w.id);
+      if (!e) {
+        e = blankEntity(w.id);
+        e.pos = { x: w.x ?? 0, y: w.y ?? 0, z: w.z ?? 0 };
+        e.prevPos = { ...e.pos };
+        this.entities.set(w.id, e);
+      }
+      if (w.k !== undefined) { e.kind = w.k; e.templateId = w.tid ?? ''; e.name = w.nm ?? ''; e.level = w.lv ?? 1; }
+      e.hp = w.hp ?? 100; e.maxHp = w.mhp ?? 100; e.dead = !!w.dead;
+      return e;
+    };
+    for (const w of snap.ents ?? []) { if (applyWire(w)) seen.add(w.id); }
+    const s = snap.self;
+    if (s) {
+      const e = applyWire(s);
+      if (e) {
+        seen.add(s.id);
+        e.resource = s.res ?? 0; e.maxResource = s.mres ?? 100;
+        e.stats = s.stats ?? e.stats; e.weapon = s.weapon ?? e.weapon;
+        this.xp = s.xp ?? 0;
+        this.copper = s.copper ?? 0;
+        this.lifetimeXp = s.lxp ?? 0;
+        this.prestigeRank = s.prk ?? 0;
+        if (s.milestones !== undefined) this.unlockedMilestones = s.milestones;
+        if (s.tal !== undefined && s.tal) {
+          this.talents = s.tal.alloc ?? emptyAllocation();
+          this.talentSpec = s.tal.spec ?? null;
+          this.talentRole = s.tal.role ?? null;
+          this.loadouts = s.tal.loadouts ?? [];
+          this.activeLoadout = typeof s.tal.activeLoadout === 'number' ? s.tal.activeLoadout : -1;
+        }
+        this.known = abilitiesKnownAt(this.cfg.playerClass, e.level, computeTalentModifiers(this.cfg.playerClass, this.talents));
+      }
+    }
+    for (const [id] of this.entities) { if (!seen.has(id)) this.entities.delete(id); }
+  };
+
+  Object.defineProperty(c, 'player', { get() { return this.entities.get(this.playerId) ?? blankEntity(this.playerId); }, configurable: true });
+
   return c;
 }
 

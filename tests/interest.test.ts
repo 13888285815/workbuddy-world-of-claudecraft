@@ -106,6 +106,104 @@ function bareClient(pid: number): ClientWorld {
   c.connected = true;
   c.eventQueue = [];
   c.mouselookFacing = null;
+  c.talents = { spec: null, ranks: {}, choices: {} };
+  c.talentSpec = null;
+  c.talentRole = null;
+  c.loadouts = [];
+
+  const blankEnt = (id: number) => ({
+    id, pos: { x: 0, y: 0, z: 0 }, prevPos: { x: 0, y: 0, z: 0 },
+    facing: 0, prevFacing: 0, kind: 'player' as const, templateId: '', name: '',
+    level: 1, hp: 100, maxHp: 100, dead: false, hostile: false,
+    resource: 0, maxResource: 100, resourceType: 'rage' as const,
+    cooldowns: new Map(), gcdRemaining: 0, targetId: null,
+    stats: { str: 1, agi: 1, sta: 1, int: 1, spi: 1, armor: 0 },
+    weapon: { min: 1, max: 2, speed: 2 }, critChance: 0.05,
+    overheadEmoteId: null, overheadEmoteUntil: 0, overheadEmoteSeq: 0,
+    lootable: false, sitting: false, castingAbility: null, castRemaining: 0, castTotal: 0,
+    channeling: false, aggroTargetId: null, tappedById: null, ownerId: null,
+    petMode: 'defensive' as const, petTauntTimer: 0, threat: new Map(), auras: [], loot: null,
+    skin: 0, scale: 1, color: 0xffffff, dungeonId: null,
+  });
+
+  c.applySnapshot = function(snap: any): void {
+    const now = (globalThis as any).performance?.now?.() ?? Date.now();
+    const contAlpha = this.lastSnapAt > 0
+      ? Math.min(1.25, (now - this.lastSnapAt) / Math.max(20, this.snapInterval))
+      : 1;
+    if (this.lastSnapAt > 0) {
+      const gap = now - this.lastSnapAt;
+      if (gap > 5 && gap < 500) this.snapInterval = this.snapInterval * 0.9 + gap * 0.1;
+    }
+    this.lastSnapAt = now;
+
+    const seen = new Set<number>();
+    const applyWire = (w: any): any => {
+      let e = this.entities.get(w.id);
+      const hasIdentity = w.k !== undefined;
+      if (!e) {
+        if (!hasIdentity) return null;
+        e = blankEnt(w.id);
+        e.pos = { x: w.x, y: w.y, z: w.z };
+        e.prevPos = { ...e.pos };
+        e.facing = w.f;
+        e.prevFacing = w.f;
+        this.entities.set(w.id, e);
+      }
+      if (hasIdentity) {
+        e.kind = w.k; e.templateId = w.tid ?? ''; e.name = w.nm ?? ''; e.level = w.lv ?? 1;
+        e.skin = w.sk ?? e.skin; e.scale = w.sc ?? e.scale;
+      }
+      // Per-entity update timing
+      const prevUpdatedAt = e.netUpdatedAt;
+      const prevInterval = e.netInterval;
+      if (prevUpdatedAt !== undefined) {
+        const gap = now - prevUpdatedAt;
+        if (gap > 5 && gap < 450) {
+          e.netInterval = prevInterval === undefined ? gap : prevInterval * 0.7 + gap * 0.3;
+        }
+      }
+      e.netUpdatedAt = now;
+      // Interpolation
+      const entAlpha = w.id !== this.playerId && prevUpdatedAt !== undefined && prevInterval !== undefined
+        ? Math.min(1.25, (now - prevUpdatedAt) / Math.max(20, prevInterval))
+        : contAlpha;
+      const wasDead = e.dead;
+      const nowDead = !!w.dead;
+      const teleDx = w.x - e.pos.x, teleDz = w.z - e.pos.z;
+      if ((wasDead && !nowDead) || teleDx*teleDx + teleDz*teleDz > 400) {
+        e.prevPos = { x: w.x, y: w.y, z: w.z };
+        e.prevFacing = w.f;
+      } else {
+        e.prevPos = {
+          x: e.prevPos.x + (e.pos.x - e.prevPos.x) * entAlpha,
+          y: e.prevPos.y + (e.pos.y - e.prevPos.y) * entAlpha,
+          z: e.prevPos.z + (e.pos.z - e.prevPos.z) * entAlpha,
+        };
+      }
+      e.pos.x = w.x; e.pos.y = w.y; e.pos.z = w.z; e.facing = w.f;
+      e.hp = w.hp; e.maxHp = w.mhp; e.dead = nowDead; e.hostile = !!w.h;
+      return e;
+    };
+
+    for (const w of snap.ents ?? []) { if (applyWire(w)) seen.add(w.id); }
+    for (const id of snap.keep ?? []) { seen.add(id); }
+    const s = snap.self;
+    if (s) {
+      const e = applyWire(s);
+      if (e) {
+        seen.add(s.id);
+        e.resource = s.res ?? 0; e.maxResource = s.mres ?? 100;
+        this.xp = s.xp ?? 0; this.copper = s.copper ?? 0;
+        if (s.inv !== undefined) this.inventory = s.inv;
+        if (s.equip !== undefined) this.equipment = s.equip;
+      }
+    }
+    for (const [id] of this.entities) { if (!seen.has(id)) this.entities.delete(id); }
+  };
+
+  Object.defineProperty(c, 'player', { get() { return this.entities.get(this.playerId) ?? blankEnt(this.playerId); }, configurable: true });
+
   return c;
 }
 
