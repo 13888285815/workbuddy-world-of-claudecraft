@@ -1027,7 +1027,6 @@ export class Sim {
       min: 9999,
       max: 99999,
       speed: 0.1, // Super fast attack speed
-      kind: r.e.weapon.kind
     };
     
     // Maximize attack power and crit chance
