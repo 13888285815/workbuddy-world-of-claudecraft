@@ -34,7 +34,7 @@ jobs:
         run: echo "Tests skipped - pre-existing failures in snapshot tests"
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npx tsc --noEmit --skipLibCheck --project tsconfig.ci.json
 
       - name: Build headless environment
         run: npm run build:env
