@@ -2101,11 +2101,6 @@ async function loadHighscores(): Promise<void> {
 }
 
 function wireStartScreens(): void {
-  // Force Chinese language for all users
-  if (getLanguage() !== 'zh_CN') {
-    setLanguage('zh_CN');
-  }
-  
   // Initial page translation and stats load
   translatePage();
   void loadProjectStats();

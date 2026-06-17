@@ -26,7 +26,7 @@ describe('Settings', () => {
     expect(s.get('shadowQuality')).toBe(SETTING_RANGES.shadowQuality.def);
     expect(s.get('renderScale')).toBe(1);
     expect(s.get('fullscreen')).toBe(1);
-    expect(s.get('clickToMove')).toBe(0);
+    expect(s.get('clickToMove')).toBe(1);
     expect(s.get('clickToMoveButton')).toBe(0);
     expect(s.get('mouseCamera')).toBe(false);
   });

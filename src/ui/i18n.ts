@@ -13107,7 +13107,7 @@ export type InterpolationValues = Record<string, InterpolationValue>;
 
 export const supportedLanguages = Object.keys(translations) as SupportedLanguage[];
 
-let currentLanguage: SupportedLanguage = "zh_CN";
+let currentLanguage: SupportedLanguage = "en";
 
 export function isSupportedLanguage(value: string): value is SupportedLanguage {
   return Object.prototype.hasOwnProperty.call(translations, value);
@@ -13148,7 +13148,7 @@ function setStoredLanguage(lang: SupportedLanguage): void {
 }
 
 // Initialize language from URL query or localStorage if available (browser environments)
-// Priority: URL param > default language (zh_CN) > stored language
+// Priority: URL param > default language (zh_CN for browsers) > stored language
 // This ensures Chinese is the default for new visitors
 if (typeof window !== "undefined" && window.location) {
   const params = new URLSearchParams(window.location.search);
@@ -13156,10 +13156,12 @@ if (typeof window !== "undefined" && window.location) {
   if (langParam && isSupportedLanguage(langParam)) {
     currentLanguage = langParam;
     setStoredLanguage(langParam); // Save user's explicit choice
+  } else {
+    // Default to Chinese for all browser visitors
+    currentLanguage = "zh_CN";
   }
-  // Don't use stored language - default to zh_CN for all new visitors
 }
-// Server-side rendering: keep default zh_CN
+// Server-side rendering / tests: keep default English
 
 export function getLanguage(): SupportedLanguage {
   return currentLanguage;
